@@ -193,7 +193,7 @@ public class SerializationUtils {
         if (inputStream == null) {
             throw new IllegalArgumentException("The InputStream must not be null");
         }
-        try (ObjectInputStream in = new ObjectInputStream(inputStream)) {
+        try (ObjectInputStream in = new ClassLoaderAwareObjectInputStream(inputStream, null)) {
             @SuppressWarnings("unchecked")
             final T obj = (T) in.readObject();
             return obj;
@@ -243,21 +243,6 @@ public class SerializationUtils {
      * class here is a workaround, see the JIRA issue LANG-626. </p>
      */
      static class ClassLoaderAwareObjectInputStream extends ObjectInputStream {
-        private static final Map<String, Class<?>> primitiveTypes = 
-                new HashMap<>();
-
-        static {
-            primitiveTypes.put("byte", byte.class);
-            primitiveTypes.put("short", short.class);
-            primitiveTypes.put("int", int.class);
-            primitiveTypes.put("long", long.class);
-            primitiveTypes.put("float", float.class);
-            primitiveTypes.put("double", double.class);
-            primitiveTypes.put("boolean", boolean.class);
-            primitiveTypes.put("char", char.class);
-            primitiveTypes.put("void", void.class);
-        }
-
         private final ClassLoader classLoader;
         
         /**
@@ -284,18 +269,19 @@ public class SerializationUtils {
         protected Class<?> resolveClass(final ObjectStreamClass desc) throws IOException, ClassNotFoundException {
             final String name = desc.getName();
             try {
-                return Class.forName(name, false, classLoader);
-            } catch (final ClassNotFoundException ex) {
-                try {
-                    return Class.forName(name, false, Thread.currentThread().getContextClassLoader());
-                } catch (final ClassNotFoundException cnfe) {
-                    final Class<?> cls = primitiveTypes.get(name);
-                    if (cls != null) {
-                        return cls;
-                    }
-                    throw cnfe;
+                if (classLoader != null) {
+                    return Class.forName(name, false, classLoader);
                 }
+            } catch (final ClassNotFoundException ex) {
             }
+            try {
+                ClassLoader threadClassLoader = Thread.currentThread().getContextClassLoader();
+                if (threadClassLoader != null) {
+                    return Class.forName(name, false, threadClassLoader);
+                }
+            } catch (final ClassNotFoundException ex) {
+            }
+            return super.resolveClass(desc);
         }
 
     }
